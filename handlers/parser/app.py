@@ -1,10 +1,15 @@
-import json
 import re
-from pdfminer.high_level import extract_text
+import json
+import nltk
 import boto3
-import en_core_web_sm
+from nltk import word_tokenize, pos_tag, ne_chunk
+from nltk.tree import Tree
+from pdfminer.high_level import extract_text
 
-nlp = en_core_web_sm.load()
+# Specify the path to the NLTK data in the Lambda layer
+nltk.data.path.append("/opt/nltk_data")
+
+s3 = boto3.client('s3')
 
 def extract_text_from_pdf(pdf_path):
     """Extract text from a PDF file."""
@@ -17,20 +22,17 @@ def extract_contact_info(text):
     return {"email": email, "phone": phone}
 
 def extract_name(text):
-    """Extract the name by focusing on the top section of the resume."""
+    """Extract the name by using NLTK's named entity recognition."""
     lines = text.strip().splitlines()
-
-    for line in lines[:5]:  # Check the first 5 lines
-        line = line.strip()
-        if re.match(r'^[A-Z][A-Za-z]+ [A-Z][A-Za-z]+$', line):
-            return line
-
-    # Fallback: Use spaCy's named entity recognition
-    doc = nlp(text)
-    for ent in doc.ents:
-        if ent.label_ == "PERSON":
-            return ent.text
-
+    for line in lines[:10]:  # Consider the first few lines for the name
+        tokenized_line = word_tokenize(line)
+        tagged_line = pos_tag(tokenized_line)
+        named_entities = ne_chunk(tagged_line)
+        
+        for chunk in named_entities:
+            if isinstance(chunk, Tree) and chunk.label() == 'PERSON':
+                return ' '.join([c[0] for c in chunk])
+    
     return None
 
 def extract_skills(text):
@@ -117,8 +119,10 @@ def remove_bullets(text):
     text = re.sub(r'\n\s*[-•*]\s+', '\n', text)
     return text
 
-def parse_resume(text):
+def parse_resume(pdf_path):
     """Main function to parse resume and extract structured information."""
+    text = extract_text_from_pdf(pdf_path)
+    
     name = extract_name(text)
     contact_info = extract_contact_info(text)
     skills = extract_skills(text)
@@ -138,23 +142,20 @@ def parse_resume(text):
     }
 
 def lambda_handler(event, context):
-    s3 = boto3.client("s3")
-
-    # Get the S3 bucket and file name from the event
-    bucket_name = event["Records"][0]["s3"]["bucket"]["name"]
-    file_key = event["Records"][0]["s3"]["object"]["key"]
-
-    # Download the file from S3
-    local_path = f"/tmp/{file_key}"
-    s3.download_file(bucket_name, file_key, local_path)
-
-    # Extract text from the PDF
-    text = extract_text_from_pdf(local_path)
+    """AWS Lambda function entry point."""
+    # Extract the bucket name and object key from the event
+    bucket_name = event['Records'][0]['s3']['bucket']['name']
+    object_key = event['Records'][0]['s3']['object']['key']
+    
+    # Download the file from S3 to the /tmp directory in Lambda
+    pdf_path = "/tmp/resume.pdf"
+    s3.download_file(bucket_name, object_key, pdf_path)
     
     # Parse the resume
-    parsed_data = parse_resume(text)
-        
+    parsed_data = parse_resume(pdf_path)
+    
+    # Return the parsed data as a JSON response
     return {
-        "statusCode": 200,
-        "data": json.dumps(f"Parsed data has been saved to {parsed_data}")
+        'statusCode': 200,
+        'body': json.dumps(parsed_data)
     }
