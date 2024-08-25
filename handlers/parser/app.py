@@ -4,21 +4,24 @@ import nltk
 import boto3
 from nltk import word_tokenize, pos_tag, ne_chunk
 from nltk.tree import Tree
-from pdfminer.high_level import extract_text
+from pdfminer.high_level import extract_text_to_fp
+from io import BytesIO
 
-# Specify the path to the NLTK data in the Lambda layer
+# Ensure NLTK data path is correctly set for Lambda layer
 nltk.data.path.append("/opt/nltk_data")
 
 s3 = boto3.client('s3')
 
-def extract_text_from_pdf(pdf_path):
-    """Extract text from a PDF file."""
-    return extract_text(pdf_path)
+def extract_text_from_pdf(pdf_stream):
+    """Extract text from a PDF file byte stream."""
+    output_string = BytesIO()
+    extract_text_to_fp(pdf_stream, output_string)  # Extract text from the PDF stream
+    return output_string.getvalue().decode('utf-8')
 
 def extract_contact_info(text):
     """Extract email and phone numbers from text."""
-    email = re.findall(r'\S+@\S+', text)
-    phone = re.findall(r'\+?\d[\d -]{8,}\d', text)  # Regex for phone numbers
+    email = re.findall(r'\b\S+@\S+\.\S+\b', text)
+    phone = re.findall(r'\+?\d[\d\s\-()]{8,}\d', text)  # Enhanced Regex for phone numbers
     return {"email": email, "phone": phone}
 
 def extract_name(text):
@@ -119,9 +122,9 @@ def remove_bullets(text):
     text = re.sub(r'\n\s*[-•*]\s+', '\n', text)
     return text
 
-def parse_resume(pdf_path):
+def parse_resume(pdf_stream):
     """Main function to parse resume and extract structured information."""
-    text = extract_text_from_pdf(pdf_path)
+    text = extract_text_from_pdf(pdf_stream)
     
     name = extract_name(text)
     contact_info = extract_contact_info(text)
@@ -143,19 +146,27 @@ def parse_resume(pdf_path):
 
 def lambda_handler(event, context):
     """AWS Lambda function entry point."""
-    # Extract the bucket name and object key from the event
-    bucket_name = event['Records'][0]['s3']['bucket']['name']
-    object_key = event['Records'][0]['s3']['object']['key']
+    try:
+        # Extract the bucket name and object key from the event
+        bucket_name = event['Records'][0]['s3']['bucket']['name']
+        object_key = event['Records'][0]['s3']['object']['key']
+        
+        # Get the PDF file directly as a byte stream
+        s3_response = s3.get_object(Bucket=bucket_name, Key=object_key)
+        pdf_stream = BytesIO(s3_response['Body'].read())
+        
+        # Parse the resume
+        parsed_data = parse_resume(pdf_stream)
+        
+        # Return the parsed data as a JSON response
+        print(parsed_data)
+        return {
+            'statusCode': 200,
+            'body': json.dumps(parsed_data)
+        }
     
-    # Download the file from S3 to the /tmp directory in Lambda
-    pdf_path = "/tmp/resume.pdf"
-    s3.download_file(bucket_name, object_key, pdf_path)
-    
-    # Parse the resume
-    parsed_data = parse_resume(pdf_path)
-    
-    # Return the parsed data as a JSON response
-    return {
-        'statusCode': 200,
-        'body': json.dumps(parsed_data)
-    }
+    except Exception as e:
+        return {
+            'statusCode': 500,
+            'body': json.dumps({'error': str(e)})
+        }

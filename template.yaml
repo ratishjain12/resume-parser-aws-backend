@@ -16,19 +16,19 @@ Globals:
       LogFormat: JSON
 Resources:
   ParserFunction:
-    Type: AWS::Serverless::Function # More info about Function Resource: https://github.com/awslabs/serverless-application-model/blob/master/versions/2016-10-31.md#awsserverlessfunction
+    Type: AWS::Serverless::Function
     Properties:
       CodeUri: handlers/parser/
       Handler: app.lambda_handler
       Runtime: python3.12
       Architectures:
         - x86_64
-      Events:
-        Parser:
-          Type: Api # More info about API Event Source: https://github.com/awslabs/serverless-application-model/blob/master/versions/2016-10-31.md#api
-          Properties:
-            Path: /parser
-            Method: post
+      Policies:
+        - Statement:
+            Effect: Allow
+            Action:
+              - s3:GetObject
+            Resource: arn:aws:s3:::resume-parsing-storage/* # Replace with your actual bucket name and optionally narrow the scope to specific objects
 
   ApplicationResourceGroup:
     Type: AWS::ResourceGroups::Group
@@ -47,9 +47,6 @@ Outputs:
   # ServerlessRestApi is an implicit API created out of Events key under Serverless::Function
   # Find out more about other implicit resources you can reference within SAM
   # https://github.com/awslabs/serverless-application-model/blob/master/docs/internals/generated_resources.rst#api
-  ParserApi:
-    Description: API Gateway endpoint URL for Develop stage for Parser function
-    Value: !Sub "https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/parser/"
   ParserFunction:
     Description: Parser Lambda Function ARN
     Value: !GetAtt ParserFunction.Arn
