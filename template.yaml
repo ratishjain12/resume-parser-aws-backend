@@ -29,6 +29,7 @@ Resources:
             Action:
               - s3:GetObject
             Resource: arn:aws:s3:::resume-parsing-storage/* # Replace with your actual bucket name and optionally narrow the scope to specific objects
+      Timeout: 900
 
   ApplicationResourceGroup:
     Type: AWS::ResourceGroups::Group
