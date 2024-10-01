@@ -5,13 +5,10 @@ Description: >
 
   Sample SAM Template for resume-parser-backend
 
-# More info about Globals: https://github.com/awslabs/serverless-application-model/blob/master/docs/globals.rst
 Globals:
   Function:
     Timeout: 3
     MemorySize: 128
-
-    # You can add LoggingConfig parameters such as the Logformat, Log Group, and SystemLogLevel or ApplicationLogLevel. Learn more here https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/sam-resource-function.html#sam-function-loggingconfig.
     LoggingConfig:
       LogFormat: JSON
 
@@ -47,6 +44,11 @@ Resources:
       NotificationConfiguration:
         LambdaConfigurations:
           - Event: s3:ObjectCreated:*
+            Filter:
+              S3Key:
+                Rules:
+                  - Name: prefix
+                    Value: uploads/
             Function: !GetAtt ParserFunction.Arn
 
   S3BucketPolicy:
@@ -78,7 +80,6 @@ Resources:
               - sts:AssumeRole
       ManagedPolicyArns:
         - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
-
       Policies:
         - PolicyName: S3AccessPolicy
           PolicyDocument:
@@ -87,7 +88,11 @@ Resources:
               - Effect: Allow
                 Action:
                   - s3:GetObject
-                Resource: !Sub "arn:aws:s3:::${AWS::StackName}-storage/*"
+                  - s3:PutObject
+                  - s3:ListBucket
+                Resource:
+                  - !Sub "arn:aws:s3:::${AWS::StackName}-storage"
+                  - !Sub "arn:aws:s3:::${AWS::StackName}-storage/*"
 
   LambdaInvokePermission:
     Type: AWS::Lambda::Permission
@@ -113,6 +118,11 @@ Resources:
           Properties:
             Bucket: !Ref S3Bucket
             Events: s3:ObjectCreated:*
+            Filter:
+              S3Key:
+                Rules:
+                  - Name: prefix
+                    Value: uploads/
       Timeout: 900
 
   QuestionGeneratorFunction:
@@ -204,9 +214,6 @@ Resources:
         Ref: ApplicationResourceGroup
       AutoConfigurationEnabled: "true"
 Outputs:
-  # ServerlessRestApi is an implicit API created out of Events key under Serverless::Function
-  # Find out more about other implicit resources you can reference within SAM
-  # https://github.com/awslabs/serverless-application-model/blob/master/docs/internals/generated_resources.rst#api
   ParserFunction:
     Description: Parser Lambda Function ARN
     Value: !GetAtt ParserFunction.Arn

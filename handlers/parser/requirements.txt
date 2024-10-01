@@ -1,5 +1,4 @@
 requests
 pdfminer.six
 boto3
-nltk
 numpy
