@@ -1,23 +1,13 @@
 import re
 import json
-import os
-import nltk
 import boto3
-from nltk import word_tokenize, pos_tag, ne_chunk
-from nltk.tree import Tree
 from pdfminer.high_level import extract_text_to_fp
 from io import BytesIO
+import logging
 
-# Set the NLTK data path to the /tmp directory
-nltk_data_dir = "/tmp/nltk_data"
-nltk.data.path.append(nltk_data_dir)
-
-# Check if NLTK data is already in /tmp, otherwise download it
-if not os.path.exists(nltk_data_dir):
-    os.makedirs(nltk_data_dir, exist_ok=True)
-    nltk.download("punkt_tab", download_dir=nltk_data_dir)
-    nltk.download("averaged_perceptron_tagger_eng", download_dir=nltk_data_dir)
-    nltk.download("maxent_ne_chunker_tab", download_dir=nltk_data_dir)
+# Configure logging
+logger = logging.getLogger()
+logger.setLevel(logging.INFO)
 
 s3 = boto3.client('s3')
 
@@ -27,10 +17,10 @@ def extract_text_from_pdf(pdf_stream):
         output_string = BytesIO()
         extract_text_to_fp(pdf_stream, output_string)
         text = output_string.getvalue().decode('utf-8')
-        print("PDF text extracted successfully")
+        logger.info("PDF text extracted successfully")
         return text
     except Exception as e:
-        print(f"Error extracting text from PDF: {str(e)}")
+        logger.error(f"Error extracting text from PDF: {str(e)}")
         raise
 
 def extract_contact_info(text):
@@ -38,32 +28,12 @@ def extract_contact_info(text):
     try:
         email = re.findall(r'\b\S+@\S+\.\S+\b', text)
         phone = re.findall(r'\+?\d[\d\s\-()]{8,}\d', text)  # Enhanced Regex for phone numbers
-        print(f"Extracted Contact Info - Email: {email}, Phone: {phone}")
+        logger.info(f"Extracted Contact Info - Email: {email}, Phone: {phone}")
         return {"email": email, "phone": phone}
     except Exception as e:
-        print(f"Error extracting contact info: {str(e)}")
+        logger.error(f"Error extracting contact info: {str(e)}")
         raise
 
-def extract_name(text):
-    """Extract the name by using NLTK's named entity recognition."""
-    try:
-        lines = text.strip().splitlines()
-        for line in lines[:10]:  # Consider the first few lines for the name
-            tokenized_line = word_tokenize(line)
-            tagged_line = pos_tag(tokenized_line)
-            named_entities = ne_chunk(tagged_line)
-            
-            for chunk in named_entities:
-                if isinstance(chunk, Tree) and chunk.label() == 'PERSON':
-                    name = ' '.join([c[0] for c in chunk])
-                    print(f"Extracted Name: {name}")
-                    return name
-
-        print("Name not found")
-        return None
-    except Exception as e:
-        print(f"Error extracting name: {str(e)}")
-        raise
 
 def extract_skills(text):
     """Extract skills from the 'Technical Skills' section of the resume."""
@@ -82,13 +52,13 @@ def extract_skills(text):
                 skill.strip() for skill in skills 
                 if skill.strip() and not re.search(r'\b(?:\d{4}|\d{1,2}/\d{1,2}/\d{2,4})\b', skill.strip())
             ]
-            print(f"Extracted Skills: {skills}")
+            logger.info(f"Extracted Skills: {skills}")
             return skills
         
-        print("Skills section not found")
+        logger.info("Skills section not found")
         return None
     except Exception as e:
-        print(f"Error extracting skills: {str(e)}")
+        logger.error(f"Error extracting skills: {str(e)}")
         raise
 
 def extract_experience(text):
@@ -109,13 +79,13 @@ def extract_experience(text):
                     experience_texts.append(remove_bullets(content))
 
             experience = "\n\n".join(experience_texts) if experience_texts else None
-            print(f"Extracted Experience: {experience}")
+            logger.info(f"Extracted Experience: {experience[:200]}...")  # Log first 200 characters
             return experience
 
-        print("Experience section not found")
+        logger.info("Experience section not found")
         return None
     except Exception as e:
-        print(f"Error extracting experience: {str(e)}")
+        logger.error(f"Error extracting experience: {str(e)}")
         raise
 
 def extract_education(text):
@@ -124,10 +94,10 @@ def extract_education(text):
         education_pattern = re.compile(r'(B\.Sc|B\.Eng|M\.Sc|M\.Eng|Bachelor|Master|Ph\.D|Doctorate|Diploma).*?(Computer Science|Engineering|Data Science|Information Technology|Business|Mathematics)', re.DOTALL | re.IGNORECASE)
         education_text = education_pattern.findall(text)
         education = [remove_bullets(item) for sublist in education_text for item in sublist]
-        print(f"Extracted Education: {education}")
+        logger.info(f"Extracted Education: {education}")
         return education
     except Exception as e:
-        print(f"Error extracting education: {str(e)}")
+        logger.error(f"Error extracting education: {str(e)}")
         raise
 
 def extract_projects(text):
@@ -141,13 +111,13 @@ def extract_projects(text):
         
         if match:
             projects_text = match.group(2).strip()
-            print(f"Extracted Projects: {projects_text}")
+            logger.info(f"Extracted Projects: {projects_text[:200]}...")  # Log first 200 characters
             return projects_text
 
-        print("Projects section not found")
+        logger.info("Projects section not found")
         return None
     except Exception as e:
-        print(f"Error extracting projects: {str(e)}")
+        logger.error(f"Error extracting projects: {str(e)}")
         raise
 
 def extract_certifications(text):
@@ -166,13 +136,13 @@ def extract_certifications(text):
             certifications_content = remove_bullets(certifications_content)
             certifications_lines = [line.strip() for line in certifications_content.splitlines() if line.strip()]
             certifications = "\n".join(certifications_lines)
-            print(f"Extracted Certifications: {certifications}")
+            logger.info(f"Extracted Certifications: {certifications}")
             return certifications
 
-        print("Certifications section not found")
+        logger.info("Certifications section not found")
         return None
     except Exception as e:
-        print(f"Error extracting certifications: {str(e)}")
+        logger.error(f"Error extracting certifications: {str(e)}")
         raise
 
 def remove_bullets(text):
@@ -182,16 +152,15 @@ def remove_bullets(text):
         text = re.sub(r'\n\s*[-•*]\s+', '\n', text)
         return text
     except Exception as e:
-        print(f"Error removing bullets: {str(e)}")
+        logger.error(f"Error removing bullets: {str(e)}")
         raise
 
 def parse_resume(pdf_stream):
     """Main function to parse resume and extract structured information."""
     try:
         text = extract_text_from_pdf(pdf_stream)
-        print(f"Extracted Text: {text[:200]}...")  # Print the first 200 characters of the text
+        logger.info(f"Extracted Text: {text[:200]}...")  # Log the first 200 characters of the text
 
-        name = extract_name(text)
         contact_info = extract_contact_info(text)
         skills = extract_skills(text)
         experience = extract_experience(text)
@@ -199,8 +168,7 @@ def parse_resume(pdf_stream):
         projects = extract_projects(text)
         certifications = extract_certifications(text)
 
-        return {
-            "name": name,
+        parsed_data = {
             "contact_info": contact_info,
             "skills": skills,
             "experience": experience,
@@ -208,32 +176,47 @@ def parse_resume(pdf_stream):
             "projects": projects,
             "certifications": certifications
         }
+        logger.info(f"Parsed Data: {json.dumps(parsed_data, indent=2)}")
+        return parsed_data
     except Exception as e:
-        print(f"Error in parse_resume: {str(e)}")
+        logger.error(f"Error in parse_resume: {str(e)}", exc_info=True)
         raise
 
 def lambda_handler(event, context):
     """AWS Lambda function entry point."""
     try:
+        logger.info(f"Received event: {json.dumps(event)}")
+        
         bucket_name = event['Records'][0]['s3']['bucket']['name']
         object_key = event['Records'][0]['s3']['object']['key']
 
-        print(f"Bucket: {bucket_name}, Object Key: {object_key}")
+        logger.info(f"Bucket: {bucket_name}, Object Key: {object_key}")
+
+        # Extract userid from the object key
+        temp_split = object_key.split('/')[1]
+        userid = temp_split.split('_')[0]
+        logger.info(f"Extracted User ID: {userid}")
 
         s3_response = s3.get_object(Bucket=bucket_name, Key=object_key)
         pdf_stream = BytesIO(s3_response['Body'].read())
 
-        print("Successfully retrieved object from S3")
+        logger.info("Successfully retrieved object from S3")
 
         parsed_data = parse_resume(pdf_stream)
-        print(f"Parsed Data: {json.dumps(parsed_data, indent=2)}")
-        
+
+        # Store parsed data as JSON in the same S3 bucket
+        parsed_json = json.dumps(parsed_data)
+        parsed_key = f"generated/{userid}_parsed.json"
+        logger.info(f"Attempting to store parsed data in S3: {parsed_key}")
+        s3.put_object(Bucket=bucket_name, Key=parsed_key, Body=parsed_json)
+        logger.info(f"Stored parsed data in S3: {parsed_key}")
+
         return {
             'statusCode': 200,
             'body': json.dumps(parsed_data)
         }
     except Exception as e:
-        print(f"Error: {str(e)}")
+        logger.error(f"Error in lambda_handler: {str(e)}", exc_info=True)
         return {
             'statusCode': 500,
             'body': json.dumps({'error': str(e)})
