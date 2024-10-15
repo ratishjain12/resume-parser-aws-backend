@@ -4,6 +4,7 @@ import boto3
 from pdfminer.high_level import extract_text_to_fp
 from io import BytesIO
 import logging
+import urllib.parse  
 
 # Configure logging
 logger = logging.getLogger()
@@ -188,20 +189,24 @@ def lambda_handler(event, context):
         logger.info(f"Received event: {json.dumps(event)}")
         
         bucket_name = event['Records'][0]['s3']['bucket']['name']
-        object_key = event['Records'][0]['s3']['object']['key']
+        encoded_object_key = event['Records'][0]['s3']['object']['key']
 
-        logger.info(f"Bucket: {bucket_name}, Object Key: {object_key}")
+        # Decode the object key to handle spaces and special characters
+        object_key = urllib.parse.unquote_plus(encoded_object_key)
+        logger.info(f"Bucket: {bucket_name}, Decoded Object Key: {object_key}")
 
         # Extract userid from the object key
         temp_split = object_key.split('/')[1]
         userid = temp_split.split('_')[0]
         logger.info(f"Extracted User ID: {userid}")
 
+        # Retrieve the PDF from S3
         s3_response = s3.get_object(Bucket=bucket_name, Key=object_key)
         pdf_stream = BytesIO(s3_response['Body'].read())
 
         logger.info("Successfully retrieved object from S3")
 
+        # Parse the resume
         parsed_data = parse_resume(pdf_stream)
 
         # Store parsed data as JSON in the same S3 bucket
